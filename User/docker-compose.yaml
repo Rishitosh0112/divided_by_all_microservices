@@ -1,0 +1,22 @@
+version: '3.9'
+
+services:
+  user-service:
+    build:
+      context: .
+    container_name: user-service
+    ports:
+      - "3000:3000"
+    environment:
+      REDIS_HOST: devtinder-redis
+      REDIS_PORT: 6379
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - devtinder-net
+
+networks:
+  devtinder-net:
+    external: true
