@@ -1,9 +1,8 @@
 import express from "express";
 import User from "../model/user";
-import auth from "../middleware/auth";
 import { Request, Response } from "express";
 import { validateEditProfileData } from "../utils/validation";
-import userAuth from "../middleware/auth";
+import { requireAuth } from "../middleware/auth";
 
 const profileRouter = express.Router();
 /** profile */
@@ -18,7 +17,7 @@ profileRouter.post("/", async (req, res) => {
   }
 });
 
-profileRouter.patch("/:userId", userAuth, async (req: any, res) => {
+profileRouter.patch("/:userId", requireAuth, async (req: any, res) => {
   try {
     const userId = req.params?.userId;
     const data = req.body;

@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: devtinder-redis
+    ports:
+      - "6379:6379"   # OK for local dev
+    networks:
+      - devtinder-net
+    command: ["redis-server", "--appendonly", "yes"]
+
+networks:
+  devtinder-net:
+    external: true

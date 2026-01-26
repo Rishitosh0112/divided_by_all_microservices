@@ -1,19 +1,26 @@
 import { Request, Response, NextFunction } from "express";
 
-const userAuth = (req: any, res: Response, next: NextFunction) => {
-  // Identity injected by NGINX after auth_request
-  const userId = req.headers["x-user-id"];
+import redis from "../config/redis";
 
-  if (!userId) {
-    res.status(401).json({
-      error: "Unauthorized: user not authenticated",
-    });
+export async function requireAuth(
+  req: any,
+  res: Response,
+  next: NextFunction
+) {
+  const sessionId = req.cookies?.session_id;
+
+  if (!sessionId) {
+    res.sendStatus(401);
+    return;
   }
 
-  // Attach to request for downstream handlers
-  req.userId = userId;
+  const session = await redis.get(`session:${sessionId}`);
 
+  if (!session) {
+    res.sendStatus(401);
+    return;
+  }
+
+  req.user = JSON.parse(session); // { userId }
   next();
-};
-
-export default userAuth;
+}

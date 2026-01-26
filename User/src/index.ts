@@ -16,7 +16,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/", authRouter);
+app.use("/auth", authRouter);
 app.use("/user", profileRouter);
 
 // Start server

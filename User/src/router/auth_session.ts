@@ -1,5 +1,7 @@
 import * as express from "express";
 import { validateSignupData } from "../utils/validation";
+import { requireAuth } from "../middleware/auth";
+
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import User from "../model/user";
@@ -91,6 +93,15 @@ authRouter.post("/signup", async (req, res) => {
       res.send("error occured"+ e);
     }
   });
+
+
+authRouter.get("/verify", requireAuth, (req: any, res) => {
+  console.log("verify called")
+  res.status(200).json({
+    userId: req.user.userId
+  });
+});
+
 
 function skillsSanitization(userData: any) {
     throw new Error("Function not implemented.");
