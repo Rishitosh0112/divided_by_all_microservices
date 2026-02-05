@@ -13,9 +13,12 @@ console.log("🔥 AUTH ROUTER FILE LOADED 🔥");
 authRouter.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log("email", email);
+    console.log("password", password);
 
     if (!email || !password) {
       res.status(400).json({ error: "Email and password required" });
+      return
     }
 
     const user = await User.findOne({ email });
@@ -30,6 +33,7 @@ authRouter.post("/login", async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       res.status(401).json({ error: "Invalid credentials" });
+      return;
     }
 
     // ✅ 1. Create session ID
@@ -54,7 +58,7 @@ authRouter.post("/login", async (req, res) => {
     res.status(200).json({ message: "Login successful" });
 
   } catch (e) {
-    res.status(500).json({ error: "Login failed" });
+    res.status(500).json({ e: "Login failed" });
   }
 });
 
