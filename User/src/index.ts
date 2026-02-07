@@ -6,10 +6,11 @@ import profileRouter from "./router/profile";
 
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 
 app.use(express.json());
 app.use(cookieParser());
+
 
 app.use((req, res, next) => {
   console.log("GLOBAL:", req.method, req.url);
@@ -17,7 +18,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/auth", authRouter);
-app.use("/user", profileRouter);
+app.use("/profiles", profileRouter);
 
 // Start server
 app.listen(PORT, () => {

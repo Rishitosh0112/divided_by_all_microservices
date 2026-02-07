@@ -78,18 +78,19 @@ profileRouter.get("/", async (req, res) => {
   res.json(users);
 });
 
-profileRouter.get("/user", async (req, res) => {
-  const userEmail = req.body.emailId;
-  try {
-    const users = await User.find({ emailId: userEmail });
-    if (users.length === 0) {
-      res.send(404).send("User not found");
-    } else {
-      res.send(users);
-    }
-  } catch (e) {
-    res.send(400).send("Something went wrong");
-  }
-});
+// profileRouter.get("/", async (req, res) => {
+//   console.log("all user req received");
+//   const userEmail = req.body.emailId;
+//   try {
+//     const users = await User.find({ emailId: userEmail });
+//     if (users.length === 0) {
+//       res.send(404).send("User not found");
+//     } else {
+//       res.send(users);
+//     }
+//   } catch (e) {
+//     res.send(400).send("Something went wrong");
+//   }
+// });
 
 export default profileRouter;
