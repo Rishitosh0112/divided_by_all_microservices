@@ -24,6 +24,8 @@ services:
       - group-db
     environment:
       DATABASE_URL: "postgresql://postgres:postgres@group-db:5432/group_service"
+    volumes:
+      - .:/app
       
 volumes:
   group-db-data:
