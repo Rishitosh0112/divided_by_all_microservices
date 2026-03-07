@@ -1,6 +1,7 @@
+import "./config";
 import express from "express";
-import { errorHandler } from "./src/middleware/errorHandler";
-import groupRouter from "./src/routers/group-route";
+import { errorHandler } from "./middleware/errorHandler";
+import groupRouter from "./routers/group-route";
 
 const app = express();
 app.use(express.json());
@@ -8,6 +9,8 @@ app.use(express.json());
 app.get("/health", (req, res) => [
   res.json({status: 'ok', service: 'group-service'})
 ])
+console.log("Group Service initialized");
+app.use("/groups", groupRouter);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -18,9 +21,7 @@ app.use((req, res) => {
 
 app.use(errorHandler)
 
-app.use("/group", groupRouter);
-
-const PORT = process.env.PORT || 6000;
+const PORT = process.env.PORT || 4002;
 
 app.listen(PORT, () => {
   console.log(`Group Service running on port ${PORT}`);

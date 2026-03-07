@@ -1,13 +1,27 @@
-import { PrismaClient } from '@prisma/client';
 import { NotFound } from "../util/error";
 import { Forbidden } from "../util/error";
-
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@prisma/client';
 
 
 class GroupService {
   private prisma;
   constructor() {
-    this.prisma = new (require('@prisma/client').PrismaClient)();
+    const connectionString = process.env.DATABASE_URL;
+    
+    if (!connectionString) {
+      throw new Error("DATABASE_URL is missing");
+    }
+
+    // 1. Create the connection pool
+    const pool = new Pool({ connectionString });
+    
+    // 2. Setup the Prisma adapter
+    const adapter = new PrismaPg(pool);
+
+    // 3. Instantiate the client with the adapter
+    this.prisma = new PrismaClient({ adapter });
   }
   async createGroup(name: string, description: string, userId: string) {
     return this.prisma.$transaction(async (tx: any) => {

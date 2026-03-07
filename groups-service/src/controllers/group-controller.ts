@@ -1,12 +1,21 @@
+declare global {
+  namespace Express {
+    interface Request {
+      userId : string
+    }
+  }
+}
+
 import { Request, Response } from 'express';
 import { groupService } from '../services/group-service';
 
 import { validateGroupCreate, validateGroupUpdate, validateUUID } from '../util/validator';
 import { asyncHandler } from '../middleware/errorHandler';
 
+
 export const createGroup = asyncHandler(async (req: Request, res: Response) => {
   validateGroupCreate(req.body);
-  const group = await groupService.createGroup(req.body.name, req.body.description, req.userId!);
+  const group = await groupService.createGroup(req.body.name, req.body.description, req.userId);
   res.status(201).json({ statusCode: 201, data: group });
 });
 

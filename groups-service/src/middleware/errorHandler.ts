@@ -1,13 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../util/error';
 
-declare global {
-  namespace Express {
-    interface Request {
-      userId?: string;
-    }
-  }
-}
+
 
 export const errorHandler = (
   error: Error | AppError,
