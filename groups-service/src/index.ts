@@ -1,6 +1,7 @@
 import "./config";
 import express from "express";
 import { errorHandler } from "./middleware/errorHandler";
+import { extractUserId } from "./middleware/auth";
 import groupRouter from "./routers/group-route";
 
 const app = express();
@@ -10,6 +11,7 @@ app.get("/health", (req, res) => [
   res.json({status: 'ok', service: 'group-service'})
 ])
 console.log("Group Service initialized");
+app.use(extractUserId);
 app.use("/groups", groupRouter);
 
 app.use((req, res) => {

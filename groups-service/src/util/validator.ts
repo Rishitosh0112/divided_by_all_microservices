@@ -1,6 +1,7 @@
 import { BadRequest } from './error';
 
 export const validateGroupCreate = (body: any) => {
+  console.log("body", body);
   if (!body.name || body.name.trim().length === 0) {
     throw new BadRequest('Group name is required');
   }

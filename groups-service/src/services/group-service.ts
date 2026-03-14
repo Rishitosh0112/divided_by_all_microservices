@@ -33,7 +33,7 @@ class GroupService {
         },
       });
 
-      await tx.groupMemeber.create({
+      await tx.groupMember.create({
         data: {
           groupId: group.id,
           userId,

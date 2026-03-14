@@ -55,7 +55,7 @@ authRouter.post("/login", async (req, res) => {
       maxAge: 1000 * 60 * 60 * 24 * 7
     });
 
-    res.status(200).json({ message: "Login successful" });
+    res.status(200).json({ message: "Login successful", userId: user._id.toString() });
 
   } catch (e) {
     res.status(500).json({ e: "Login failed" });
@@ -99,11 +99,10 @@ authRouter.post("/signup", async (req, res) => {
   });
 
 
-authRouter.get("/verify", requireAuth, (req: any, res) => {
+authRouter.get("/validate", requireAuth, (req: any, res) => {
   console.log("verify called")
-  res.status(200).json({
-    userId: req.user.userId
-  });
+  res.set("X-User-Id", req.user.userId);
+  res.sendStatus(200);
 });
 
 

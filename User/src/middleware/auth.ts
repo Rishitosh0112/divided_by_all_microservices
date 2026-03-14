@@ -7,6 +7,9 @@ export async function requireAuth(
   res: Response,
   next: NextFunction
 ) {
+
+  debugger;
+  console.log("require auth called", req.cookies?.session_id);
   const sessionId = req.cookies?.session_id;
 
   if (!sessionId) {
@@ -15,7 +18,7 @@ export async function requireAuth(
   }
 
   const session = await redis.get(`session:${sessionId}`);
-
+  console.log("session", session);
   if (!session) {
     res.sendStatus(401);
     return;
