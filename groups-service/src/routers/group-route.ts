@@ -9,4 +9,8 @@ groupRouter.get("/", groupController.listUserGroups);
 groupRouter.patch("/:groupId", groupController.updateGroup);
 groupRouter.delete("/:groupId", groupController.deleteGroup);
 
+groupRouter.post("/:groupId/invite", groupController.inviteToGroup);
+
+groupRouter.patch("/:groupId/invitation/:invitationId/respondToInvitation", groupController.resolveGroupInvitation);
+
 export default groupRouter;

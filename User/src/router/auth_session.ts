@@ -22,7 +22,6 @@ authRouter.post("/login", async (req, res) => {
     }
 
     const user = await User.findOne({ email });
-    console.log("user", user);
 
     debugger;
     if (!user) {
@@ -30,6 +29,8 @@ authRouter.post("/login", async (req, res) => {
       return;
     }
 
+    console.log("check user", user.password);
+    console.log("check user", password)
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       res.status(401).json({ error: "Invalid credentials" });
@@ -90,7 +91,6 @@ authRouter.post("/signup", async (req, res) => {
         password: passwordHash,
       });
   
-      skillsSanitization(userData);
       await user.save();
       res.send("user saved successfully");
     } catch (e) {
@@ -105,9 +105,5 @@ authRouter.get("/validate", requireAuth, (req: any, res) => {
   res.sendStatus(200);
 });
 
-
-function skillsSanitization(userData: any) {
-    throw new Error("Function not implemented.");
-}
 
 export default authRouter;
