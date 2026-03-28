@@ -5,7 +5,12 @@ const mongoDbConnectionString = process.env.MONGO_URL || "mongodb+srv://rishitos
 // mongodb+srv://Rishi:Sg42QWv23ZK3ty7z@clusterfree.weasj.mongodb.net/
 
 const connectDB = async () => {
-  await mongoose.connect(mongoDbConnectionString)
+  await mongoose.connect(mongoDbConnectionString, {
+    maxPoolSize: 10,
+    minPoolSize: 2,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000
+  });
 }
 
 connectDB()

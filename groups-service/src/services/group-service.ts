@@ -14,7 +14,12 @@ class GroupService {
     }
 
     // 1. Create the connection pool
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({ connectionString,
+      max: 10,
+      min: 2,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+     });
 
     // 2. Setup the Prisma adapter
     const adapter = new PrismaPg(pool);
