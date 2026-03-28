@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    networks:
+      - devtinder-net
+
+  group-db:
+    image: postgres:15
+    container_name: group-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: group_service
+    volumes:
+      - group-db-data:/var/lib/postgresql/data
+    networks:
+      - devtinder-net
+
+  user-service:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/divided_by_all_user_service:latest
+    container_name: user-service
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MONGODB_URI: ${MONGODB_URI}
+    networks:
+      - devtinder-net
+
+  group-service:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/divided_by_all_groups_service:latest
+    container_name: group-service
+    restart: always
+    ports:
+      - "4002:4002"
+    depends_on:
+      - group-db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@group-db:5432/group_service
+    networks:
+      - devtinder-net
+
+  api-gateway:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/divided_by_all_api_gateway:latest
+    container_name: api-gateway
+    restart: always
+    ports:
+      - "8080:80"
+    networks:
+      - devtinder-net
+
+networks:
+  devtinder-net:
+    driver: bridge
+
+volumes:
+  group-db-data:
