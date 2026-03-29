@@ -56,7 +56,7 @@ services:
 
 networks:
   devtinder-net:
-    driver: bridge
+    external: true
 
 volumes:
   group-db-data:
