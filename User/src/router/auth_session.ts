@@ -51,8 +51,8 @@ authRouter.post("/login", async (req, res) => {
     // ✅ 3. Set secure cookie
     res.cookie("session_id", sessionId, {
       httpOnly: true,
-      secure: true,        // true in prod (https)
-      sameSite: "strict",
+      secure: false,       // false for HTTP, true for HTTPS
+      sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7
     });
 
