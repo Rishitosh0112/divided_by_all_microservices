@@ -3,13 +3,13 @@ import { validateSignupData } from "../utils/validation";
 import { requireAuth } from "../middleware/auth";
 
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import jwt, { Secret, SignOptions } from "jsonwebtoken";
 import User from "../model/user";
 
 const authRouter = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET!;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const JWT_SECRET: Secret = process.env.JWT_SECRET!;
+const JWT_EXPIRES_IN: string = (process.env.JWT_EXPIRES_IN || "7d") as string;
 
 authRouter.post("/login", async (req, res) => {
   try {
@@ -32,9 +32,10 @@ authRouter.post("/login", async (req, res) => {
       return;
     }
 
-    const token = jwt.sign({ userId: user._id.toString() }, JWT_SECRET, {
-      expiresIn: JWT_EXPIRES_IN,
-    });
+    const signOptions: SignOptions = {
+      expiresIn: JWT_EXPIRES_IN as any,
+    };
+    const token = jwt.sign({ userId: user._id.toString() }, JWT_SECRET, signOptions);
 
     res.cookie("token", token, {
       httpOnly: true,
