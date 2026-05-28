@@ -1,29 +1,21 @@
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
-import redis from "../config/redis";
+const JWT_SECRET = process.env.JWT_SECRET!;
 
-export async function requireAuth(
-  req: any,
-  res: Response,
-  next: NextFunction
-) {
+export function requireAuth(req: any, res: Response, next: NextFunction) {
+  const token = req.cookies?.token;
 
-  debugger;
-  console.log("require auth called", req.cookies?.session_id);
-  const sessionId = req.cookies?.session_id;
-
-  if (!sessionId) {
+  if (!token) {
     res.sendStatus(401);
     return;
   }
 
-  const session = await redis.get(`session:${sessionId}`);
-  console.log("session", session);
-  if (!session) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    req.user = decoded;
+    next();
+  } catch {
     res.sendStatus(401);
-    return;
   }
-
-  req.user = JSON.parse(session); // { userId }
-  next();
 }
