@@ -22,13 +22,13 @@ authRouter.post("/login", async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: "No account found with that email" });
       return;
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: "Incorrect password" });
       return;
     }
 
@@ -72,9 +72,9 @@ authRouter.post("/signup", async (req, res) => {
       });
   
       await user.save();
-      res.send("user saved successfully");
-    } catch (e) {
-      res.send("error occured"+ e);
+      res.status(201).json({ message: "User created successfully" });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || "Signup failed" });
     }
   });
 
