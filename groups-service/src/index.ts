@@ -7,9 +7,9 @@ import groupRouter from "./routers/group-route";
 const app = express();
 app.use(express.json());
 
-app.get("/health", (req, res) => [
-  res.json({status: 'ok', service: 'group-service'})
-])
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", service: "group-service" });
+});
 console.log("Group Service initialized");
 app.use(extractUserId);
 app.use("/groups", groupRouter);

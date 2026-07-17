@@ -7,5 +7,6 @@
     "esModuleInterop": true,
     "strict": true
   },
-  "exclude": ["node_modules", "prisma.config.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "generated", "prisma.config.ts"]
 }

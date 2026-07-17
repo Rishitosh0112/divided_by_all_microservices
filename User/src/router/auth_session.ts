@@ -56,13 +56,10 @@ authRouter.post("/logout", (req, res) => {
 });
 
 authRouter.post("/signup", async (req, res) => {
-    console.log("hitting user data");
     try {
       validateSignupData(req);
-      console.log("req", req.body);
       const { firstName, lastName, email, password } = req.body;
       const passwordHash = await bcrypt.hash(password, 10);
-      console.log("passwordHash", passwordHash);
   
       const user = new User({
         firstName,
@@ -80,7 +77,6 @@ authRouter.post("/signup", async (req, res) => {
 
 
 authRouter.get("/validate", requireAuth, (req: any, res) => {
-  console.log("verify called")
   res.set("X-User-Id", req.user.userId);
   res.sendStatus(200);
 });
