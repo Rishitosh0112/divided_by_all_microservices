@@ -1,68 +1,56 @@
-name: Deploy Backend
+name: Build and Push Backend Images
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-south-1
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure temporary AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: arn:aws:iam::389656351866:role/GitHubActionsMicroservicesEcrRole
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push user-service image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/divided_by_all_user_service:latest ./User
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/divided_by_all_user_service:latest
+          docker build -t "$REGISTRY/divided-by-all/user-service:$IMAGE_TAG" ./User
+          docker push "$REGISTRY/divided-by-all/user-service:$IMAGE_TAG"
 
       - name: Build and push groups-service image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/divided_by_all_groups_service:latest ./groups-service
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/divided_by_all_groups_service:latest
+          docker build -t "$REGISTRY/divided-by-all/groups-service:$IMAGE_TAG" ./groups-service
+          docker push "$REGISTRY/divided-by-all/groups-service:$IMAGE_TAG"
 
       - name: Build and push api-gateway image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/divided_by_all_api_gateway:latest ./api-gateway
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/divided_by_all_api_gateway:latest
-
-      - name: Copy docker-compose to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.prod.yml"
-          target: "~/deployments/backend/"
-
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/deployments/backend
-            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            export AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}
-            export AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
-            export AWS_REGION=${{ secrets.AWS_REGION }}
-            export MONGO_URL="${{ secrets.MONGO_URL }}"
-            sudo systemctl start docker
-            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-            sudo AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID AWS_REGION=$AWS_REGION MONGO_URL=$MONGO_URL docker compose -f docker-compose.prod.yml pull
-            sudo AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID AWS_REGION=$AWS_REGION MONGO_URL=$MONGO_URL docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          docker build -t "$REGISTRY/divided-by-all/api-gateway:$IMAGE_TAG" ./api-gateway
+          docker push "$REGISTRY/divided-by-all/api-gateway:$IMAGE_TAG"
