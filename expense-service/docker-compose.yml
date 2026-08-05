@@ -1,0 +1,43 @@
+services:
+  expense-db:
+    image: divided-by-all/expense-service-postgress-db
+    container_name: divided-by-all-expense-service-postgress-db-container
+    build:
+      context: .
+      dockerfile: database.Dockerfile
+    environment:
+      POSTGRES_USER: expense_user
+      POSTGRES_PASSWORD: expense_password
+      POSTGRES_DB: expense_service
+    ports:
+      - "5433:5432"
+    volumes:
+      - expense-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U expense_user -d expense_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  expense-service:
+    image: divided-by-all/expense-service:local
+    container_name: expense-service
+    build:
+      context: .
+    ports:
+      - "4003:4003"
+    environment:
+      PORT: 4003
+      DATABASE_URL: "postgresql://expense_user:expense_password@expense-db:5432/expense_service?schema=public"
+    depends_on:
+      expense-db:
+        condition: service_healthy
+    networks:
+      - default
+      - devtinder-net
+
+volumes:
+  expense-db-data:
+
+networks:
+  devtinder-net:
+    external: true

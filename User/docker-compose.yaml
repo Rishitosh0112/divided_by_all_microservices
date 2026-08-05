@@ -1,17 +1,55 @@
-version: '3.9'
-
 services:
+  user-mongo:
+    image: divided-by-all/user-service-mongo-db
+    container_name: divided-by-all-user-service-mongo-db-container
+    build:
+      context: .
+      dockerfile: database.Dockerfile
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - user-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - devtinder-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - devtinder-net
+
   user-service:
+    image: divided-by-all/user-service:local
     build:
       context: .
     container_name: user-service
     ports:
       - "8000:8000"
     environment:
-      MONGO_URL: ${MONGO_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      PORT: 8000
+      MONGO_URL: mongodb://user-mongo:27017/devtinder
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: local-development-secret
+      JWT_EXPIRES_IN: 7d
       NODE_ENV: development
+    depends_on:
+      user-mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - .:/app
       - /app/node_modules
@@ -25,3 +63,6 @@ services:
 networks:
   devtinder-net:
     external: true
+
+volumes:
+  user-mongo-data:

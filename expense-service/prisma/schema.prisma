@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Expense {
+  id           String         @id @db.Uuid
+  groupId      String         @db.Uuid @map("group_id")
+  description  String
+  paidByUserId String         @map("paid_by_user_id")
+  amountMinor  Int            @map("amount_minor")
+  currency     String         @db.Char(3)
+  splitType    SplitType      @map("split_type")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  splits       ExpenseSplit[]
+
+  @@index([groupId, createdAt])
+  @@map("expenses")
+}
+
+model ExpenseSplit {
+  id          String   @id @default(uuid()) @db.Uuid
+  expenseId   String   @db.Uuid @map("expense_id")
+  userId      String   @map("user_id")
+  amountMinor Int      @map("amount_minor")
+  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@unique([expenseId, userId])
+  @@map("expense_splits")
+}
+
+model Balance {
+  id             String   @id @default(uuid()) @db.Uuid
+  groupId        String   @db.Uuid @map("group_id")
+  debtorUserId   String   @map("debtor_user_id")
+  creditorUserId String   @map("creditor_user_id")
+  amountMinor    Int      @map("amount_minor")
+  currency       String   @db.Char(3)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([groupId, debtorUserId, creditorUserId, currency])
+  @@index([groupId, debtorUserId])
+  @@map("balances")
+}
+
+enum SplitType {
+  EQUAL
+  EXACT
+}

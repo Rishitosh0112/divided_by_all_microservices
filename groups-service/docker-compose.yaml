@@ -1,9 +1,10 @@
-version: "3.9"
-
 services:
   group-db:
-    image: postgres:15
-    container_name: group-db
+    image: divided-by-all/groups-service-postgress-db
+    container_name: divided-by-all-groups-service-postgress-db-container
+    build:
+      context: .
+      dockerfile: database.Dockerfile
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -13,19 +14,34 @@ services:
       - "5434:5432"
     volumes:
       - group-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d group_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - devtinder-net
 
   group-service:
-    build: .
+    image: divided-by-all/groups-service:local
+    build:
+      context: .
     container_name: group-service
     restart: always
     ports:
       - "4002:4002"
     depends_on:
-      - group-db
+      group-db:
+        condition: service_healthy
     environment:
+      PORT: 4002
       DATABASE_URL: "postgresql://postgres:postgres@group-db:5432/group_service"
-    volumes:
-      - .:/app
-      
+    networks:
+      - devtinder-net
+
 volumes:
   group-db-data:
+
+networks:
+  devtinder-net:
+    external: true
