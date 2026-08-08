@@ -107,7 +107,10 @@ connects directly to the frontend task.
 
 | Step | Status | Notes |
 |---|---|---|
-| AWS budget | Complete | Budget cap set to no more than ₹5,000/month. |
+| AWS budget | Complete | Monthly cost budget is set to US$45 with email alerts at 50% and 80% forecasted cost, plus 50%, 80%, and 100% actual cost. Budgets alert; they do not automatically stop resources. |
+| AWS account plan | Complete | Account upgraded from the Free plan to the Paid plan so that Amazon DocumentDB can be used. Remaining Free Tier credits continue to apply to eligible usage until they expire. |
+| ECS task IAM roles | Complete | Shared ECS execution role has the standard ECR/CloudWatch policy; shared application task role exists with no application permissions yet. |
+| ALB target groups and listener rules | Complete | Frontend default route plus Client MFE and API-gateway path routes now use IP-type target groups. |
 | ECR repositories | Complete | Five private repositories were created in `ap-south-1`. |
 | GitHub OIDC provider | Complete | GitHub Actions is registered as a trusted identity source. |
 | GitHub OIDC IAM roles | Complete | Separate backend and frontend roles trust only their own `main`-branch workflow. |
@@ -115,7 +118,7 @@ connects directly to the frontend task.
 | GitHub → ECR pipeline | First job successful | GitHub OIDC, role assumption, Docker build, and ECR push have been verified; confirm images in ECR and run the other repository workflow if needed. |
 | VPC, ALB, ECS, ASG | Core infrastructure complete | One ASG-managed EC2 instance is running and registered with the ECS cluster. |
 | ECS task security groups | In progress | Create service-level firewalls before task definitions and ECS services. |
-| RDS, DocumentDB, Secrets Manager | RDS database in progress | RDS private-subnet placement is complete; create the Groups PostgreSQL database next. |
+| RDS, DocumentDB, Secrets Manager | DocumentDB cluster deferred | The Groups PostgreSQL database and its application connection secret are ready. The private DocumentDB subnet group is ready. Create the intended one-instance User cluster immediately before final User-service deployment to minimize paid runtime. |
 | ECS services | Not started | Frontend, Client MFE, gateway, User, Groups. |
 
 ## Architecture progress map
@@ -137,6 +140,11 @@ VPC: divided-by-all-vpc (two AZs)
   |    `- internet-facing ALB: divided-by-all-alb
   |          `- frontend target group (currently empty)
   `- two private subnets
+       `- Groups PostgreSQL RDS: divided-by-all-groups-postgres
+            `- database: group_service
+            `- application DATABASE_URL secret in Secrets Manager
+       `- DocumentDB subnet group: divided-by-all-documentdb-subnet-group
+            `- ready for the future User-service database cluster
 ```
 
 The target group is intentionally empty because the frontend ECS service does not exist yet. An
@@ -177,18 +185,17 @@ Amazon MSK.
 The following items remain before the full current application can work through the ALB DNS name.
 They are implementation steps, not new architecture decisions.
 
-1. Finish the Groups PostgreSQL database in Amazon RDS.
-2. Create an Amazon DocumentDB subnet group and DocumentDB cluster for User service, then store
-   connection details in AWS Secrets Manager.
-3. Create ECS task execution and application task IAM roles so tasks can pull images from Amazon
+1. Create ECS task execution and application task IAM roles so tasks can pull images from Amazon
    ECR, write logs, and later read their required secrets.
-4. Create target groups and ALB listener rules for Client MFE and Nginx API gateway.
-5. Create five ECS task definitions: frontend shell, Client MFE, API gateway, User service, and
+2. Create target groups and ALB listener rules for Client MFE and Nginx API gateway.
+3. Create five ECS task definitions: frontend shell, Client MFE, API gateway, User service, and
    Groups service.
-6. Create the five ECS services, attach security groups, attach target groups where public, and
+4. Create the five ECS services, attach security groups, attach target groups where public, and
    configure ECS Service Connect for internal User/Groups calls.
-7. Configure runtime values: database URLs, JWT secret, frontend API URL, and Client MFE URL.
-8. Allow the Groups-service Prisma migration to run against RDS; configure User service for the
+5. Configure runtime values: database URLs, JWT secret, frontend API URL, and Client MFE URL.
+6. Create the Amazon DocumentDB cluster for User service immediately before its first ECS
+   deployment, then store its connection details in AWS Secrets Manager.
+7. Allow the Groups-service Prisma migration to run against RDS; configure User service for the
    DocumentDB connection; then test the ALB DNS URL.
 
 Before deploying all five services, verify Amazon EC2 capacity. One `t3.micro` has limited memory;
@@ -1142,7 +1149,7 @@ Creating a DB subnet group does not create a database and has no database-instan
 6. Do not select a public subnet.
 7. Select **Create**.
 
-## Step 19 — Groups PostgreSQL database in Amazon RDS (in progress)
+## Step 19 — Groups PostgreSQL database in Amazon RDS (complete)
 
 ### What is being created?
 
@@ -1161,21 +1168,335 @@ This begins managed-database charges. Use the smallest practical development con
 `db.t3.micro`, Single-AZ, and 20 GiB of General Purpose SSD storage. Do not create this database
 in a public subnet or permit public access.
 
-### First AWS Console page
+### Completed configuration
+
+The Groups database is now available with the following non-secret configuration:
+
+```text
+DB instance identifier:  divided-by-all-groups-postgres
+Engine:                  PostgreSQL 16.14
+DB instance class:       db.t3.micro
+Database name:           group_service
+Storage:                 20 GiB General Purpose SSD (gp3), encrypted
+Availability:            Single-AZ
+Public access:           Disabled
+DB subnet group:         divided-by-all-rds-subnet-group
+Security group:          divided-by-all-groups-rds-sg
+Backups:                 1-day retention
+```
+
+RDS created and manages the master credential in AWS Secrets Manager. The application does not
+use that master secret directly. A separate secret was created for the Groups task definition:
+
+```text
+Secret name: divided-by-all/groups-service/database-url
+JSON key:    DATABASE_URL
+```
+
+Its value is a PostgreSQL connection URL using the private RDS endpoint, port `5432`, database
+`group_service`, and `sslmode=require`. The URL and its password must never be committed to Git,
+written into this runbook, or shared in chat.
+
+The database does not have application tables yet. The Groups ECS container runs
+`npx prisma migrate deploy` at startup, so its first successful deployment will apply the
+committed Prisma migrations. Verify that the required migrations are committed before deploying
+the service.
+
+### AWS Console creation instructions used
 
 1. Open the **Amazon RDS** console in Mumbai (`ap-south-1`) and select **Databases** → **Create
    database**.
 2. Choose **Standard create**.
 3. Choose engine type **PostgreSQL**.
-4. Choose the **Free tier** template if it is available and you are eligible; otherwise choose
-   **Dev/Test**. We will set the exact instance and networking options on the following sections.
+4. Select PostgreSQL version `16.14`.
+5. Choose the **Free tier** template if it is available and you are eligible; otherwise choose
+   **Dev/Test**.
+6. Under **Settings**, enter:
 
-## Next planned steps
+   ```text
+   DB instance identifier: divided-by-all-groups-postgres
+   Master username:        groups_admin
+   Credential management:  Managed in AWS Secrets Manager
+   ```
 
-1. Create an IAM role that only the two Divided By All GitHub repositories can assume through OIDC.
-2. Give that role the minimum ECR-push permissions for the five repositories.
-3. Update GitHub Actions to build images, use the role, and push immutable commit-tagged images to
-   ECR.
-4. Create the VPC, ALB, ECS cluster, ECS Capacity Provider, EC2 launch template, and ASG.
-5. Create databases and Secrets Manager secrets.
-6. Deploy and test ECS services through the ALB DNS address.
+   AWS generates and stores the master password. Do not copy it into source control or the
+   runbook.
+7. Under **DB instance size**, choose:
+
+   ```text
+   DB instance class: db.t3.micro
+   ```
+
+8. Under **Storage**, choose `20 GiB`, **General Purpose SSD (gp3)**, and enable storage
+   encryption.
+9. Under **Connectivity**, choose:
+
+   ```text
+   VPC:             divided-by-all-vpc
+   DB subnet group: divided-by-all-rds-subnet-group
+   Public access:   No
+   VPC security group: divided-by-all-groups-rds-sg
+   ```
+
+   Do not select the default security group and do not allow public access.
+10. Under **Availability & durability**, choose **Single-AZ DB instance**.
+11. Set backup retention to one day and leave the remaining development-only settings at their
+    defaults. Select **Create database**.
+12. Wait until the database status is **Available**, then use the RDS database page's **View in
+    Secrets Manager** link to confirm the managed master credential exists.
+13. In Secrets Manager, create the separate application secret named
+    `divided-by-all/groups-service/database-url` with one JSON key, `DATABASE_URL`. Its value is
+    the private PostgreSQL connection URL described in the completed configuration above.
+
+## Step 20 — Amazon DocumentDB subnet group for User service (complete)
+
+### What was created?
+
+An Amazon DocumentDB subnet group that limits the future User-service database cluster to the two
+private subnets in the Divided By All VPC. A subnet group is only a placement rule; it does not
+create a database cluster or incur a database-instance charge.
+
+```text
+DocumentDB subnet group: divided-by-all-documentdb-subnet-group
+  |- ap-south-1a: subnet-09a43dcaf7419916d (10.0.0.0/20)
+  `- ap-south-1b: subnet-0c10ba21e994b022e (10.0.144.0/20)
+```
+
+The public subnet pair was deliberately excluded. When the DocumentDB cluster is created, this
+subnet group ensures its network interfaces do not receive a public internet address.
+
+### AWS Console instructions used
+
+1. Open the **Amazon DocumentDB** console in Mumbai (`ap-south-1`).
+2. Select **Subnet groups** → **Create**.
+3. Enter:
+
+   ```text
+   Name:        divided-by-all-documentdb-subnet-group
+   Description: Private subnets for Divided By All User DocumentDB
+   VPC:         divided-by-all-vpc
+   ```
+
+4. Add only the two private subnets listed above, one from each Availability Zone.
+5. Select **Create subnet group**.
+
+## Next planned step
+
+### Cost checkpoint — DocumentDB cluster (approved for controlled learning)
+
+Do not create a provisioned DocumentDB cluster yet. On 2026-08-08, the AWS public price list for
+Mumbai (`ap-south-1`) lists the smallest standard provisioned instance, `db.t3.medium`, at
+`$0.113` per hour. Running one instance for 730 hours is approximately `$82.49` per month before
+DocumentDB storage, I/O, backup, and data-transfer charges. That recurring instance cost alone
+exceeds the ₹5,000/month learning budget.
+
+The project decision is to use DocumentDB because it is the intended production database for User
+service, while controlling learning costs operationally:
+
+1. Create the smallest suitable cluster for the learning deployment.
+2. Stop the cluster immediately after each active learning or testing session. Stopping removes
+   instance-hour charges but storage and backup charges remain.
+3. Remember that AWS automatically starts a stopped DocumentDB cluster after seven days; stop it
+   again if it is not needed.
+4. Do not treat a stopped cluster as production-ready. The User service cannot serve requests
+   while its database is stopped.
+
+The AWS account was upgraded to the Paid plan before this cluster is created. This upgrade allows
+DocumentDB and does not discard remaining Free Tier credits; AWS applies them automatically to
+eligible future charges until their expiry. Check **Billing and Cost Management** → **Credits** for
+the current available balance and credit-specific eligibility. The Console Home "credits earned"
+progress widget is not the authoritative remaining balance.
+
+### Cost alarm
+
+The existing AWS Budget is a monthly **US$45** cost budget with email notifications for 50% and
+80% forecasted cost, and 50%, 80%, and 100% actual cost. It provides early warning as the
+DocumentDB learning environment is used. It is an alerting mechanism only: it does not stop a
+cluster, ECS task, or other resource when a threshold is reached. Stop unneeded DocumentDB
+clusters manually after each active session.
+
+Proceed with the DocumentDB cluster creation steps below.
+
+## Step 21 — User-service Amazon DocumentDB cluster (in progress)
+
+The next resource is the managed, MongoDB-compatible database for User service. It must use
+`divided-by-all-documentdb-subnet-group` and `divided-by-all-user-documentdb-sg`; it must not be
+publicly accessible. Use a single `db.t3.medium` instance for the initial learning deployment and
+stop the cluster outside active sessions as described above.
+
+### Cost-control correction completed
+
+The first cluster creation used the console's default replica configuration and created three
+DocumentDB instances: one primary and two replicas. That configuration would have incurred roughly
+three times the intended instance cost. The empty cluster, its instances, automated backups, and
+storage were deleted without a final snapshot before application use.
+
+The replacement cluster must use the following exact configuration:
+
+```text
+Cluster type:                 Instance-based cluster
+Cluster identifier:           divided-by-all-user-documentdb
+Engine version:               5.0.0
+DB instance class:            db.t3.medium
+Regular replica instances:    0
+Authentication:               Managed in AWS Secrets Manager
+Master username:              DividedByAllDocumentDb
+DB subnet group:              divided-by-all-documentdb-subnet-group
+VPC security group:           divided-by-all-user-documentdb-sg
+Public access:                Disabled
+Deletion protection:          Disabled for the learning deployment
+```
+
+`0` regular replicas means the cluster has one primary database instance in total. For a
+production environment, re-enable deletion protection and add replicas deliberately after the
+cost and availability requirements have been decided.
+
+### Deployment ordering decision
+
+The DocumentDB cluster is intentionally deferred. The subnet group and security group remain
+ready without a database-instance charge, while the rest of the ECS deployment proceeds. Create
+the one-instance cluster only immediately before the first User-service ECS deployment and
+end-to-end test. This minimizes paid learning time without changing the target production
+architecture.
+
+## Step 22 — ECS task execution and application task IAM roles (complete)
+
+ECS uses two different IAM roles for each task definition:
+
+```text
+ECS task execution role
+  -> used by ECS before the application starts
+  -> pulls private ECR images, writes CloudWatch logs, and injects Secrets Manager values
+
+ECS application task role
+  -> used by the running application container itself
+  -> grants only application-level AWS access when a service needs it
+```
+
+Create one shared execution role named `divided-by-all-ecs-task-execution-role` with the AWS
+managed `AmazonECSTaskExecutionRolePolicy`. This grants the standard ECR image-pull and
+CloudWatch Logs permissions. Add a separate least-privilege Secrets Manager policy after the
+final User and Groups secret ARNs exist.
+
+Create one shared application task role named `divided-by-all-ecs-task-role`. It has the same
+ECS-task trust relationship but no permissions initially; the current services do not call AWS
+APIs directly. Add only service-specific permissions later when code requires them.
+
+Both roles must trust only ECS tasks:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+### Result recorded
+
+The following shared roles now exist:
+
+```text
+divided-by-all-ecs-task-execution-role
+  `- AmazonECSTaskExecutionRolePolicy attached
+
+divided-by-all-ecs-task-role
+  `- no permission policies attached yet
+```
+
+The execution role will receive a separate least-privilege Secrets Manager policy later, after
+the final application secret ARNs are known. Do not attach broad `SecretsManagerReadWrite` or
+administrator policies.
+
+## Step 23 — Client MFE and API-gateway ALB target groups and listener rules (complete)
+
+The frontend target group already exists as the ALB listener's default action. This step adds the
+two path-based destinations that are also public through the same ALB:
+
+```text
+/mfe/*                         -> Client MFE task, port 80
+/auth/*, /profiles/*, /groups/* -> API-gateway task, port 80
+all remaining paths             -> frontend-shell task, port 3000 (default)
+```
+
+Create two IP-type target groups in `divided-by-all-vpc`:
+
+```text
+Client MFE
+  Name:              divided-by-all-client-mfe-tg
+  Protocol / port:   HTTP / 80
+  Health check path: /
+
+API gateway
+  Name:              divided-by-all-api-gateway-tg
+  Protocol / port:   HTTP / 80
+  Health check path: /health
+```
+
+Do not register targets manually. The ECS services will register their task IP addresses when
+they are created.
+
+The current Nginx API-gateway configuration does not yet expose `/health`. Add a simple gateway
+health endpoint that returns HTTP `200` before launching the API-gateway ECS service; otherwise
+the ALB will mark gateway tasks unhealthy. Creating the target group and listener rule can proceed
+before that code change.
+
+On the ALB's HTTP port `80` listener, add these rules ahead of the default frontend action:
+
+```text
+Priority 10: path /mfe/*                               -> divided-by-all-client-mfe-tg
+Priority 20: paths /auth/*, /profiles/*, /groups/*     -> divided-by-all-api-gateway-tg
+Default:                                                -> divided-by-all-frontend-tg
+```
+
+### Result recorded
+
+Both new target groups were recreated with target type **IP addresses**. The first attempt used
+the `Instance` target type and was deleted while empty; that target type cannot register ECS tasks
+using `awsvpc` networking.
+
+```text
+divided-by-all-client-mfe-tg    HTTP :80, IP targets, health check /
+divided-by-all-api-gateway-tg   HTTP :80, IP targets, health check /health
+```
+
+The ALB HTTP listener now evaluates its rules as follows:
+
+```text
+Priority 10: /mfe/*                             -> divided-by-all-client-mfe-tg
+Priority 20: /auth/*, /profiles/*, /groups/*   -> divided-by-all-api-gateway-tg
+Default:                                        -> divided-by-all-frontend-tg
+```
+
+## Step 24 — API-gateway health endpoint and image publication (in progress)
+
+The API-gateway target group checks `GET /health`. Before ECS deploys the Nginx gateway, add this
+location inside its existing `server { ... }` block in `api-gateway/nginx.conf`:
+
+```nginx
+location = /health {
+  access_log off;
+  return 200 "ok\n";
+}
+```
+
+This route is deliberately local to Nginx: it returns HTTP `200` without calling User or Groups
+service. The ALB can therefore tell whether the gateway container itself is running and accepting
+HTTP connections. After the change is committed to the gateway repository's `main` branch, its
+GitHub Actions workflow must build and push a new immutable API-gateway image to ECR.
+
+### Health route verified locally
+
+The exact-match `/health` location is present in `api-gateway/nginx.conf`, before the proxied API
+locations. It returns `200` and `ok` without contacting an upstream service, matching the ALB
+health-check configuration.
+
+The backend GitHub Actions workflow at `.github/workflows/deploy.yml` runs on every push to
+`main`. It builds and pushes immutable commit-SHA images for User service, Groups service, and
+API gateway. After committing the health-route change, verify that workflow succeeds and record
+the API-gateway image's commit-SHA tag for the later ECS task definition.
