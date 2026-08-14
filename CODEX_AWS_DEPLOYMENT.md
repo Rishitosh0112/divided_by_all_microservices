@@ -109,8 +109,12 @@ connects directly to the frontend task.
 |---|---|---|
 | AWS budget | Complete | Monthly cost budget is set to US$45 with email alerts at 50% and 80% forecasted cost, plus 50%, 80%, and 100% actual cost. Budgets alert; they do not automatically stop resources. |
 | AWS account plan | Complete | Account upgraded from the Free plan to the Paid plan so that Amazon DocumentDB can be used. Remaining Free Tier credits continue to apply to eligible usage until they expire. |
-| ECS task IAM roles | Complete | Shared ECS execution role has the standard ECR/CloudWatch policy; shared application task role exists with no application permissions yet. |
-| ALB target groups and listener rules | Complete | Frontend default route plus Client MFE and API-gateway path routes now use IP-type target groups. |
+| ECS task IAM roles | Complete | Shared ECS execution role has the standard ECR/CloudWatch policy plus least-privilege access to the Groups and User runtime secrets; shared application task role exists with no application permissions yet. |
+| ALB target groups and listener rules | Complete | Frontend default route, Client MFE route, API-gateway business routes, and the public API Gateway `/health` route use IP-type target groups. |
+| CloudWatch log groups | Complete | Five ECS log groups exist in `ap-south-1`, each with seven-day retention. |
+| ECS Service Connect namespace | Complete | Private Cloud Map namespace `divided-by-all.local` exists in the application VPC. |
+| Groups ECS task definition | Complete | Revision `divided-by-all-groups-service:1` is active; it runs the immutable Groups image with secure `DATABASE_URL` injection and CloudWatch logging. |
+| Groups ECS service | Complete | The task runs privately on ECS EC2 capacity, reads its `DATABASE_URL` from Secrets Manager, reaches RDS on TCP 5432, and logs `Group Service running on port 4002`. |
 | ECR repositories | Complete | Five private repositories were created in `ap-south-1`. |
 | GitHub OIDC provider | Complete | GitHub Actions is registered as a trusted identity source. |
 | GitHub OIDC IAM roles | Complete | Separate backend and frontend roles trust only their own `main`-branch workflow. |
@@ -118,8 +122,8 @@ connects directly to the frontend task.
 | GitHub → ECR pipeline | First job successful | GitHub OIDC, role assumption, Docker build, and ECR push have been verified; confirm images in ECR and run the other repository workflow if needed. |
 | VPC, ALB, ECS, ASG | Core infrastructure complete | One ASG-managed EC2 instance is running and registered with the ECS cluster. |
 | ECS task security groups | In progress | Create service-level firewalls before task definitions and ECS services. |
-| RDS, DocumentDB, Secrets Manager | DocumentDB cluster deferred | The Groups PostgreSQL database and its application connection secret are ready. The private DocumentDB subnet group is ready. Create the intended one-instance User cluster immediately before final User-service deployment to minimize paid runtime. |
-| ECS services | Not started | Frontend, Client MFE, gateway, User, Groups. |
+| RDS, DocumentDB, Secrets Manager | DocumentDB ready; User secret pending | The Groups PostgreSQL database and its application connection secret are ready. One private, encrypted DocumentDB cluster with one `db.t3.medium` primary instance is available for User service. RDS subnet placement still requires a future replacement/restore to change. |
+| ECS services | Groups, User, API Gateway, and Client MFE complete | Client MFE revision `:2` is ALB-healthy and public `/mfe/remoteEntry.js` returns HTTP 200. Frontend Shell remains to be deployed. |
 
 ## Architecture progress map
 
@@ -142,7 +146,7 @@ VPC: divided-by-all-vpc (two AZs)
   `- two private subnets
        `- Groups PostgreSQL RDS: divided-by-all-groups-postgres
             `- database: group_service
-            `- application DATABASE_URL secret in Secrets Manager
+            `- Groups application DATABASE_URL secret must be verified before ECS deployment
        `- DocumentDB subnet group: divided-by-all-documentdb-subnet-group
             `- ready for the future User-service database cluster
 ```
@@ -1248,22 +1252,31 @@ the service.
     `divided-by-all/groups-service/database-url` with one JSON key, `DATABASE_URL`. Its value is
     the private PostgreSQL connection URL described in the completed configuration above.
 
-## Step 20 — Amazon DocumentDB subnet group for User service (complete)
+## Step 20 — Amazon DocumentDB subnet group for User service (correction pending)
 
 ### What was created?
 
-An Amazon DocumentDB subnet group that limits the future User-service database cluster to the two
-private subnets in the Divided By All VPC. A subnet group is only a placement rule; it does not
-create a database cluster or incur a database-instance charge.
+An Amazon DocumentDB subnet group was created for the future User-service database cluster. A
+subnet group is only a placement rule; it does not create a database cluster or incur a
+database-instance charge.
 
 ```text
 DocumentDB subnet group: divided-by-all-documentdb-subnet-group
-  |- ap-south-1a: subnet-09a43dcaf7419916d (10.0.0.0/20)
+  |- ap-south-1a: subnet-09a43dcaf7419916d (10.0.0.0/20) — public; must be replaced
   `- ap-south-1b: subnet-0c10ba21e994b022e (10.0.144.0/20)
 ```
 
-The public subnet pair was deliberately excluded. When the DocumentDB cluster is created, this
-subnet group ensures its network interfaces do not receive a public internet address.
+An inventory review later found that `subnet-09a43dcaf7419916d` has a default route to the
+Internet Gateway, so it is public. The correct private pair is:
+
+```text
+ap-south-1a: subnet-07ac29b26c7808485 (10.0.128.0/20)
+ap-south-1b: subnet-0c10ba21e994b022e (10.0.144.0/20)
+```
+
+Terraform will update both the DocumentDB and RDS subnet groups to this pair after first importing
+them. The DocumentDB cluster does not currently exist; the RDS instance is not publicly accessible,
+but its subnet group should still be corrected before the Groups ECS service uses it.
 
 ### AWS Console instructions used
 
@@ -1317,7 +1330,7 @@ clusters manually after each active session.
 
 Proceed with the DocumentDB cluster creation steps below.
 
-## Step 21 — User-service Amazon DocumentDB cluster (in progress)
+## Step 21 — User-service Amazon DocumentDB cluster (complete)
 
 The next resource is the managed, MongoDB-compatible database for User service. It must use
 `divided-by-all-documentdb-subnet-group` and `divided-by-all-user-documentdb-sg`; it must not be
@@ -1351,13 +1364,23 @@ Deletion protection:          Disabled for the learning deployment
 production environment, re-enable deletion protection and add replicas deliberately after the
 cost and availability requirements have been decided.
 
-### Deployment ordering decision
+### Terraform-created learning cluster
 
-The DocumentDB cluster is intentionally deferred. The subnet group and security group remain
-ready without a database-instance charge, while the rest of the ECS deployment proceeds. Create
-the one-instance cluster only immediately before the first User-service ECS deployment and
-end-to-end test. This minimizes paid learning time without changing the target production
-architecture.
+Terraform created the replacement cluster with the one-instance configuration above. The cluster
+is now `available` and its private endpoint is:
+
+```text
+divided-by-all-user-documentdb.cluster-ch6oi66eohl7.ap-south-1.docdb.amazonaws.com:27017
+```
+
+AWS generated and manages the master credential in Secrets Manager. Its ARN is deliberately not
+used as the application connection value: the next step creates a separate `MONGO_URL` secret for
+the User ECS task. The master credential must not be copied into source code, Terraform variables,
+or Git.
+
+The User Dockerfile has also been updated and locally built with AWS's public DocumentDB TLS CA
+bundle at `/app/global-bundle.pem`. The next User image pushed to ECR will contain this file so the
+Mongoose client can verify the DocumentDB TLS certificate.
 
 ## Step 22 — ECS task execution and application task IAM roles (complete)
 
@@ -1421,6 +1444,7 @@ two path-based destinations that are also public through the same ALB:
 ```text
 /mfe/*                         -> Client MFE task, port 80
 /auth/*, /profiles/*, /groups/* -> API-gateway task, port 80
+/health                         -> API-gateway task, port 80
 all remaining paths             -> frontend-shell task, port 3000 (default)
 ```
 
@@ -1470,6 +1494,7 @@ The ALB HTTP listener now evaluates its rules as follows:
 ```text
 Priority 10: /mfe/*                             -> divided-by-all-client-mfe-tg
 Priority 20: /auth/*, /profiles/*, /groups/*   -> divided-by-all-api-gateway-tg
+Priority 30: /health                            -> divided-by-all-api-gateway-tg
 Default:                                        -> divided-by-all-frontend-tg
 ```
 
@@ -1500,3 +1525,362 @@ The backend GitHub Actions workflow at `.github/workflows/deploy.yml` runs on ev
 `main`. It builds and pushes immutable commit-SHA images for User service, Groups service, and
 API gateway. After committing the health-route change, verify that workflow succeeds and record
 the API-gateway image's commit-SHA tag for the later ECS task definition.
+
+The health-route change was committed on `main` as
+`ec936eeb5d1eec6d4921955d9046c65819d47e66` (`Add API gateway health check`). The local working
+tree is clean. Confirm the associated **Build and Push Backend Images** GitHub Actions workflow
+is green before using this commit SHA as an ECS image tag.
+
+## Step 33 — API Gateway ECS service and public health verification (complete)
+
+Terraform deployed API Gateway task-definition revision `:2` using the immutable ECR image tag
+`dd8a49014830bb902955d945df0ba43ded802dbf`. The ECS service
+`divided-by-all-api-gateway` reached a successful rollout with one running, ALB-healthy task.
+
+The first public `GET /health` request returned ALB HTTP `503` even though the target was healthy.
+This was routing, not an API Gateway failure: `/health` did not match the API path rule and the ALB
+therefore used its default Frontend target group, which is still empty. Terraform then added the
+independent listener rule at priority `30`:
+
+```text
+/health -> divided-by-all-api-gateway-tg
+```
+
+The public verification succeeded:
+
+```text
+GET http://divided-by-all-alb-191643826.ap-south-1.elb.amazonaws.com/health
+HTTP/1.1 200 OK
+Server: nginx/1.31.3
+```
+
+This confirms the complete public request path is working:
+
+```text
+Browser or curl -> ALB -> API Gateway target group -> healthy Nginx API Gateway task -> HTTP 200
+```
+
+Do not remove the `/health` listener rule when the Frontend Shell service is deployed; it remains a
+small, direct availability check for the public API Gateway route.
+
+## Step 34 — Client MFE ECS service and public module verification (complete)
+
+The Client MFE Docker image was updated with a dedicated static-file Nginx configuration. This is
+not the API Gateway Nginx: the ALB sends `/mfe/*` directly to the Client MFE target group, and this
+container removes the `/mfe/` prefix before serving Webpack's root-level `remoteEntry.js` and chunk
+files. GitHub Actions published the immutable image tag
+`ce13a61c8796701a097b69ae7ebe6f263c3a8062`.
+
+Terraform deployed `divided-by-all-client-mfe` with a private `awsvpc` task, port `80`, CloudWatch
+Logs at `/ecs/divided-by-all/client-mfe`, and the existing IP-type Client MFE ALB target group.
+The initial `512 MiB` reservation could not fit on the small ECS EC2 hosts, so task-definition
+revision `:2` lowered the static Nginx reservation to `256 MiB`.
+
+This deployment also demonstrated an `awsvpc` networking limit: the then-four EC2 hosts each had
+one task and no spare Elastic Network Interface (ENI) slot for the usual zero-downtime replacement.
+For this one-task learning service, the Client MFE deployment configuration deliberately uses:
+
+```text
+Availability Zone Rebalancing: disabled
+Minimum healthy percent:       0
+Maximum percent:               100
+```
+
+This permits a brief `/mfe/*` interruption during an MFE deployment: ECS stops the old task, frees
+its ENI slot, then starts the replacement. It avoids adding a fifth EC2 host solely for temporary
+rollout capacity. Production services with real users should instead use larger hosts, more ENI
+capacity, or enough spare capacity for zero-downtime deployment.
+
+The final ECS state is one running, healthy Client MFE task on revision `:2`; its target group
+registered a healthy private IP. The public Module Federation entry file was verified:
+
+```text
+HEAD http://divided-by-all-alb-191643826.ap-south-1.elb.amazonaws.com/mfe/remoteEntry.js
+HTTP/1.1 200 OK
+Content-Type: application/javascript
+```
+
+The next deployment is Frontend Shell. Its production image must be built with
+`MFE_REMOTE_URL` pointing to that public `/mfe/remoteEntry.js` URL.
+
+## Step 25 — CloudWatch Logs groups for ECS tasks (complete)
+
+Each ECS task definition will use the `awslogs` log driver to send a container's standard output
+and errors to one service-specific CloudWatch Logs group. Keeping groups separate makes it easy to
+find the logs for a failing service without mixing them with another service's output.
+
+```text
+/ecs/divided-by-all/frontend-shell
+/ecs/divided-by-all/client-mfe
+/ecs/divided-by-all/api-gateway
+/ecs/divided-by-all/user-service
+/ecs/divided-by-all/groups-service
+```
+
+All five groups were created in Mumbai (`ap-south-1`) with the **Standard** log class and a
+seven-day retention period. They are intentionally empty until ECS tasks start. The local helper
+script `scripts/create_cloudwatch_log_groups.py` can recreate the setup idempotently; its default
+mode is a dry run and `--apply` performs the AWS changes.
+
+## Step 26 — Groups-service secret access for ECS (complete)
+
+The Groups task definition will inject `DATABASE_URL` from the secret
+`divided-by-all/groups-service/database-url`. The ECS **task execution role** retrieves this value
+before the Groups application container starts, so it needs a least-privilege policy that allows
+only `secretsmanager:GetSecretValue` and `secretsmanager:DescribeSecret` on that one secret ARN.
+
+The application secret was created in Mumbai with the stable name
+`divided-by-all/groups-service/database-url`. Its current ARN is:
+
+```text
+arn:aws:secretsmanager:ap-south-1:389656351866:secret:divided-by-all/groups-service/database-url-1pSdBw
+```
+
+Terraform uses a data source to find that secret by name and created the inline policy
+`divided-by-all-groups-database-secret-read` on
+`divided-by-all-ecs-task-execution-role`. The policy permits only the two required actions on that
+one secret ARN. The User-service secret is created later, with DocumentDB, and will be added
+deliberately when that service is ready to deploy.
+
+## Step 29 — ECS Service Connect private DNS namespace (complete)
+
+Terraform created the AWS Cloud Map private DNS namespace `divided-by-all.local` in
+`vpc-00c3ef2ae0f63dac8`. The namespace is private to the VPC; it does not create a public website
+or a public DNS record.
+
+ECS Service Connect services will later register stable internal names in this namespace. For
+example, the API-gateway task can call the Groups service through an internal DNS name instead of
+hardcoding one ECS task's changing IP address. `terraform apply` refreshed all current managed and
+read-only resources afterward and reported `No changes`, confirming Terraform state matches AWS.
+
+## Step 30 — Groups ECS task definition (complete)
+
+Terraform created active task-definition revision `divided-by-all-groups-service:1`. It is a
+blueprint only; no Groups container runs until the next ECS service step.
+
+```text
+Image:       divided-by-all/groups-service:ec936eeb5d1eec6d4921955d9046c65819d47e66
+CPU:         256 units (0.25 vCPU)
+Memory:      512 MiB
+Network:     awsvpc
+Port:        4002, named groups-service
+Logs:        /ecs/divided-by-all/groups-service
+Execution:   divided-by-all-ecs-task-execution-role
+Task role:   divided-by-all-ecs-task-role
+```
+
+The definition injects `DATABASE_URL` from the Groups Secrets Manager ARN. In the ECS Console,
+the blank **Secrets Manager ARN or name** beside **Private registry** describes optional ECR
+registry credentials; it does not indicate that the application environment secret is absent.
+Select the container's JSON view and search for `DATABASE_URL` to verify the application secret
+reference directly.
+
+## Step 31 — Groups ECS service creation and RDS connectivity (complete)
+
+Terraform created `divided-by-all-groups-service` in `divided-by-all-cluster` with desired count
+one, private `awsvpc` networking, the Groups task security group, and ECS Service Connect enabled.
+The service deliberately has no ALB target group because it is an internal backend.
+
+The ECS container-instance view confirmed that the single registered Linux `t3.micro` EC2 host can
+place the task, reserving `256` CPU units and `512 MiB` memory. The stopped-task history initially
+showed a restart loop, which was diagnosed in CloudWatch Logs in two stages:
+
+1. ECS initially injected the complete JSON secret rather than its `DATABASE_URL` key. The task
+   definition was updated to use the Secrets Manager JSON-key suffix
+   `:DATABASE_URL::`.
+2. Once Prisma could parse the URL, it reported `P1001: Can't reach database server`. The RDS
+   inbound rule was already correct, but the Groups task security group allowed outbound traffic
+   only on port `80`. Terraform created a least-privilege egress rule permitting TCP `5432` only
+   from the Groups task security group to the Groups RDS security group.
+
+The final CloudWatch log entry `Group Service running on port 4002` confirms that the replacement
+task read its secret, connected to PostgreSQL, completed application startup, and is now listening
+on its internal application port.
+
+Service Connect registered the private API-gateway alias `group-service:4002`. The API gateway can
+use this private name when it is deployed; the Groups service remains unreachable directly from the
+public Internet.
+
+## Step 32 — User ECS task and service (complete)
+
+The User Docker image was rebuilt and pushed to ECR with immutable tag
+`7aab85dae4bb90c7c129a851924c3d45aa7c4782`. Before deployment, the User Dockerfile was updated
+to download AWS's public RDS/DocumentDB CA bundle into `/app/global-bundle.pem`, because Amazon
+DocumentDB requires TLS.
+
+The application runtime secret `divided-by-all/user-service/runtime` contains `MONGO_URL`,
+`JWT_SECRET`, and `JWT_EXPIRES_IN`. Terraform grants the ECS **execution role** read access to
+only that secret and the task definition injects each JSON key separately using the ECS
+`:KEY::` suffix. The values are not stored in Terraform configuration or state.
+
+Terraform created the versioned task definition `divided-by-all-user-service` with `256` CPU
+units, `512 MiB` memory, private `awsvpc` networking, named port `8000`, and CloudWatch Logs at
+`/ecs/divided-by-all/user-service`. It then created the ECS service
+`divided-by-all-user-service`, which keeps one private task running and registers
+`user-service:8000` through Service Connect.
+
+The existing EC2 container instance had only `404 MiB` schedulable memory remaining after the
+Groups task's `512 MiB` reservation. Because User also reserves `512 MiB`, ECS could not place it
+on that host. The ECS capacity provider correctly requested a second EC2 instance from the Auto
+Scaling Group, its ECS agent registered it with the cluster, and ECS placed the User task there.
+This is a real example of the distinction between ECS task scheduling and EC2 capacity scaling.
+
+User task logs confirmed the DocumentDB TLS connection and application startup:
+
+```text
+Database connection successful
+User service listening on port 8000
+```
+
+The User service remains private; only the future API gateway service can call it through the
+`user-service:8000` alias.
+
+## Step 27 — Terraform read-only foundation (complete)
+
+Terraform `v1.15.8` is installed locally on the Apple Silicon development machine. The
+`infra/` directory now contains the AWS provider configuration, a Mumbai-region variable, local
+state exclusions, and read-only data sources for the existing VPC, private subnets, ALB, ECS
+cluster, task IAM roles, and ALB target groups.
+
+`terraform plan` successfully read the existing AWS infrastructure and proposed only local output
+state values. Applying that plan stored the following references in the local Terraform state; it
+did **not** create, modify, or delete an AWS resource:
+
+```text
+VPC:              vpc-00c3ef2ae0f63dac8
+Private subnets:  subnet-07ac29b26c7808485, subnet-0c10ba21e994b022e
+ALB DNS:          divided-by-all-alb-191643826.ap-south-1.elb.amazonaws.com
+ECS cluster:      divided-by-all-cluster
+API target group: divided-by-all-api-gateway-tg
+```
+
+The new private RDS subnet group is ready for a future replacement database instance. Always review
+the resulting `terraform plan` before applying it.
+
+## Step 28 — Database subnet-group correction attempt (partially complete)
+
+Terraform imported both existing database subnet groups and planned an in-place replacement of
+public subnet `subnet-09a43dcaf7419916d` with private subnet
+`subnet-07ac29b26c7808485`.
+
+The DocumentDB subnet group update succeeded. Because no DocumentDB cluster currently exists, it
+now contains only the intended private subnet pair:
+
+```text
+subnet-07ac29b26c7808485 (ap-south-1a)
+subnet-0c10ba21e994b022e (ap-south-1b)
+```
+
+RDS rejected removal of `subnet-09a43dcaf7419916d` with
+`InvalidParameterValue: Some of the subnets to be deleted are currently in use`. This means the
+existing Single-AZ PostgreSQL instance is placed in that subnet. Terraform stopped after the
+DocumentDB change; it did not delete the RDS instance, database storage, or data.
+
+The correct remediation is **not** to retry the same in-place update. Terraform created a new RDS
+subnet group containing the two private subnets, but an existing RDS instance cannot move to it
+within the same VPC. A replacement/restore is required to change its subnet placement.
+
+### New private RDS subnet group created
+
+Terraform created the following additional subnet group successfully. This operation did not alter
+the running database instance and therefore caused no interruption:
+
+```text
+Name: divided-by-all-groups-rds-private-subnet-group
+Subnets:
+  - subnet-07ac29b26c7808485 (private, ap-south-1a)
+  - subnet-0c10ba21e994b022e (private, ap-south-1b)
+```
+
+The new private RDS subnet group can be used by a future replacement database instance.
+
+### RDS migration previews rejected safely
+
+The existing RDS instance was imported into local Terraform state and a first migration preview was
+generated. Terraform proposed **one replacement** (`1 to add, 1 to destroy`), not an in-place
+subnet-group modification. The draft resource definition omitted immutable attributes—most notably
+`storage_encrypted = true`—so Terraform interpreted them as a request to recreate the database.
+
+That plan was not applied. A complete resource definition was then prepared and Terraform produced
+the desired in-place preview (`0 to add, 1 to change, 0 to destroy`). Applying that reviewed plan
+was also rejected by the RDS API before any modification:
+
+```text
+InvalidVPCNetworkStateFault:
+You cannot move a DB instance to a DB subnet group in the same VPC.
+```
+
+Amazon RDS permits changing a DB instance to a subnet group only when moving between VPCs; it does
+not use this operation to relocate an existing instance between subnets in the same VPC. Therefore,
+the database cannot be moved to the new private subnet group in place.
+
+To change the placement, choose one deliberate replacement strategy: create a snapshot and restore
+it into a new instance using the private group, or create a new empty PostgreSQL instance in that
+group and migrate/recreate the application data. Since this learning database is not yet serving
+ECS traffic, deleting and recreating it is another viable option only after explicit approval.
+
+## Tips
+
+### Safely create and copy a PostgreSQL `DATABASE_URL` on macOS
+
+An ECS task receives the value of `DATABASE_URL` from AWS Secrets Manager at startup. A PostgreSQL
+connection URL has a strict structure. In particular, a password containing characters such as
+`@`, `:`, `/`, `?`, or `#` must be URL-encoded before it is placed in the URL. Otherwise a client
+such as Prisma can misread part of the password as the host, port, or query string and fail with an
+error such as `P1013: invalid port number in database URL`.
+
+Do not paste the RDS password or the complete database URL into a terminal command history, a chat,
+source code, Git, or this document. Instead, use the following command on the developer Mac. It
+asks for the password without echoing it, URL-encodes it, builds the connection URL, and copies the
+result directly to the macOS clipboard without printing the secret.
+
+```bash
+python3 -c 'import getpass, urllib.parse, subprocess; password=getpass.getpass("Paste RDS master password (hidden): "); encoded=urllib.parse.quote(password, safe=""); url=f"postgresql://groups_admin:{encoded}@divided-by-all-groups-postgres.ch6oi66eohl7.ap-south-1.rds.amazonaws.com:5432/group_service?sslmode=require"; subprocess.run(["pbcopy"], input=url, text=True, check=True); print("Correct DATABASE_URL copied to clipboard.")'
+```
+
+What the command does:
+
+- `python3 -c` runs the small Python program supplied between the quotes, without creating a file.
+- `getpass.getpass(...)` prompts for the RDS master password but hides the typed characters.
+- `urllib.parse.quote(password, safe="")` URL-encodes every reserved character in the password.
+  For example, an `@` in the password becomes `%40`, so it cannot be mistaken for the separator
+  before the database host.
+- The `url=...` expression constructs the required PostgreSQL URL using the Groups database user,
+  RDS endpoint, standard PostgreSQL port `5432`, database name, and TLS requirement.
+- `subprocess.run(["pbcopy"], ...)` sends that URL to the macOS clipboard. It intentionally does
+  not display the URL in the terminal.
+- The final `print(...)` confirms only that the clipboard operation completed; it does not reveal
+  the password or URL.
+
+After the command prints its success message:
+
+1. Open **AWS Secrets Manager** in `ap-south-1`.
+2. Open the application secret `divided-by-all/groups-service/database-url`.
+3. Select **Retrieve secret value**, then **Edit**.
+4. Replace only the value for the JSON key `DATABASE_URL` with the clipboard value (`Cmd + V`).
+   Keep the key name exactly `DATABASE_URL`.
+5. Save the secret. Never paste the resulting URL into chat or commit it to Git.
+
+Saving a secret does not change an already-running ECS task: ECS injects secrets only while it
+starts a container. Trigger a new deployment so Groups starts a fresh task and retrieves the saved
+value:
+
+```bash
+aws ecs update-service \
+  --region ap-south-1 \
+  --cluster divided-by-all-cluster \
+  --service divided-by-all-groups-service \
+  --force-new-deployment \
+  --no-cli-pager
+```
+
+- `aws ecs update-service` requests an ECS service deployment update.
+- `--region ap-south-1` targets the Mumbai AWS region.
+- `--cluster` and `--service` identify the Groups ECS service.
+- `--force-new-deployment` replaces the task even though its task-definition revision is unchanged;
+  the replacement task reads the new secret during startup.
+- `--no-cli-pager` prevents the AWS CLI from opening its interactive output viewer (`less`).
+
+Finally, inspect the newest Groups task's **Logs** tab in ECS or the log group
+`/ecs/divided-by-all/groups-service` in CloudWatch. Treat the deployment as successful only when
+the task remains running and the logs show the service has completed its startup sequence.

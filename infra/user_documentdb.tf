@@ -45,7 +45,7 @@ resource "aws_docdb_cluster" "user" {
   # AWS creates and stores the randomly generated master password in Secrets
   # Manager. Later, the User service will receive a separate application
   # connection secret; the master password will never be hard-coded here.
-  master_username            = "user_documentdb_admin"
+  master_username             = "user_documentdb_admin"
   manage_master_user_password = true
 
   # Encrypt database storage using the AWS-managed DocumentDB KMS key.
