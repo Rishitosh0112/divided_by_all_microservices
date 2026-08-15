@@ -123,7 +123,7 @@ connects directly to the frontend task.
 | VPC, ALB, ECS, ASG | Core infrastructure complete | One ASG-managed EC2 instance is running and registered with the ECS cluster. |
 | ECS task security groups | In progress | Create service-level firewalls before task definitions and ECS services. |
 | RDS, DocumentDB, Secrets Manager | DocumentDB ready; User secret pending | The Groups PostgreSQL database and its application connection secret are ready. One private, encrypted DocumentDB cluster with one `db.t3.medium` primary instance is available for User service. RDS subnet placement still requires a future replacement/restore to change. |
-| ECS services | Groups, User, API Gateway, and Client MFE complete | Client MFE revision `:2` is ALB-healthy and public `/mfe/remoteEntry.js` returns HTTP 200. Frontend Shell remains to be deployed. |
+| ECS services | Complete | Groups, User, API Gateway, Client MFE, and Frontend Shell each run one healthy task. The three public ALB target groups are healthy. |
 
 ## Architecture progress map
 
@@ -1602,6 +1602,46 @@ Content-Type: application/javascript
 
 The next deployment is Frontend Shell. Its production image must be built with
 `MFE_REMOTE_URL` pointing to that public `/mfe/remoteEntry.js` URL.
+
+## Step 35 — Frontend Shell ECS service and complete application path (complete)
+
+GitHub Actions published the Frontend Shell image with the deployed Client MFE remote URL embedded
+at build time. Terraform deployed image tag `763d6c02e1a17a0cffa77207b154d6f11847e312` as
+`divided-by-all-frontend-shell:1`, running Next.js on port `3000` with a private task ENI and the
+Frontend task security group. The existing Frontend ALB target group is the default listener route,
+so unmatched public application paths now reach this shell.
+
+The Frontend Shell task receives `API_GATEWAY_URL` as the existing ALB HTTP URL. Its server-side
+Next.js API routes use that URL to reach the ALB's `/auth/*`, `/profiles/*`, and `/groups/*` rules;
+browser requests remain same-origin to the Frontend Shell.
+
+During restart verification, all five services reached desired count one with zero pending tasks:
+
+```text
+Groups service       -> task definition :2 -> running 1
+User service         -> task definition :1 -> running 1
+API Gateway          -> task definition :2 -> running 1
+Client MFE           -> task definition :2 -> running 1
+Frontend Shell       -> task definition :1 -> running 1
+```
+
+All three public ALB target groups were independently verified healthy:
+
+```text
+divided-by-all-frontend-tg     -> healthy
+divided-by-all-client-mfe-tg   -> healthy
+divided-by-all-api-gateway-tg  -> healthy
+```
+
+The first complete public application URL remains HTTP during this deployment phase:
+
+```text
+http://divided-by-all-alb-191643826.ap-south-1.elb.amazonaws.com
+```
+
+The next infrastructure milestone is CloudFront HTTPS in front of this ALB, followed later by a
+custom Togetherly domain. Before adding caching or HTTPS, manually verify the complete browser
+path: Frontend Shell -> Client MFE -> API Gateway -> Groups/User services.
 
 ## Step 25 — CloudWatch Logs groups for ECS tasks (complete)
 

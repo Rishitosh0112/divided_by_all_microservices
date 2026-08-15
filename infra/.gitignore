@@ -6,3 +6,6 @@ crash.log
 
 # Terraform saved execution plans are local review artifacts.
 *.tfplan
+
+# Local pause/resume snapshot. It records only AWS resource settings, never secrets.
+.pause-state.local.json
