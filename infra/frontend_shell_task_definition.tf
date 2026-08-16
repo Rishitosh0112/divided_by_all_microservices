@@ -14,11 +14,14 @@ data "aws_ecr_repository" "frontend_shell" {
   name = "divided-by-all/frontend-shell"
 }
 
+
 variable "frontend_shell_image_tag" {
   description = "Immutable ECR image tag for the Frontend Shell container."
   type        = string
   default     = "763d6c02e1a17a0cffa77207b154d6f11847e312"
 }
+
+
 
 resource "aws_ecs_task_definition" "frontend_shell" {
   family                   = "divided-by-all-frontend-shell"
@@ -48,7 +51,7 @@ resource "aws_ecs_task_definition" "frontend_shell" {
       environment = [
         {
           name  = "API_GATEWAY_URL"
-          value = "http://${data.aws_lb.app.dns_name}"
+          value = "http://api-gateway:80"
         }
       ]
 

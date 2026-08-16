@@ -21,10 +21,13 @@ data "aws_security_group" "frontend_shell_tasks" {
 }
 
 resource "aws_ecs_service" "frontend_shell" {
-  name            = "divided-by-all-frontend-shell"
-  cluster         = data.aws_ecs_cluster.app.arn
-  task_definition = aws_ecs_task_definition.frontend_shell.arn
-  desired_count   = 1
+  name                               = "divided-by-all-frontend-shell"
+  cluster                            = data.aws_ecs_cluster.app.arn
+  task_definition                    = aws_ecs_task_definition.frontend_shell.arn
+  desired_count                      = 1
+  availability_zone_rebalancing      = "DISABLED"
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
 
   capacity_provider_strategy {
     capacity_provider = "Infra-ECS-Cluster-divided-by-all-cluster-e9cd13f5-AsgCapacityProvider-KyuME3ENzRYw"
@@ -45,6 +48,11 @@ resource "aws_ecs_service" "frontend_shell" {
 
     security_groups  = [data.aws_security_group.frontend_shell_tasks.id]
     assign_public_ip = false
+  }
+
+  service_connect_configuration {
+    enabled   = true
+    namespace = aws_service_discovery_private_dns_namespace.app.arn
   }
 
   load_balancer {

@@ -7,8 +7,8 @@
 # - Public-entry side: the existing ALB target group sends API requests to Nginx
 #   on container port 80 after the ALB listener matches /auth/*, /profiles/*,
 #   or /groups/*.
-# - Private-backend side: ECS Service Connect lets Nginx resolve user-service
-#   and group-service by their stable private aliases.
+# - Private-service side: ECS Service Connect lets Nginx resolve User and Groups
+#   and publishes api-gateway:80 for the private Frontend Shell caller.
 #
 # The task itself has no public IP. The ALB is the only public entry point.
 # ------------------------------------------------------------------------------
@@ -26,6 +26,14 @@ resource "aws_ecs_service" "api_gateway" {
   cluster         = data.aws_ecs_cluster.app.arn
   task_definition = aws_ecs_task_definition.api_gateway.arn
   desired_count   = 1
+
+  # The cluster currently has no spare awsvpc ENI slot for a second temporary
+  # Gateway task. Allow a brief stop-then-start replacement when this service
+  # changes, rather than requiring an additional EC2 instance just for rolling
+  # deployment capacity.
+  availability_zone_rebalancing      = "DISABLED"
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
 
   # Use ECS EC2 capacity and let the capacity provider request an additional
   # EC2 instance if no registered host has room for this 512 MiB task.
@@ -66,10 +74,39 @@ resource "aws_ecs_service" "api_gateway" {
     enabled   = true
     namespace = aws_service_discovery_private_dns_namespace.app.arn
 
-    # There is intentionally no `service` block here. API Gateway does not need
-    # to publish a Service Connect alias because the ALB reaches it through its
-    # target group. Enabling Service Connect still makes this task a client able
-    # to resolve the User and Groups aliases in the private namespace.
+    # The Service Connect proxy is the hop between Frontend Shell and Nginx,
+    # and between Nginx and the User/Groups services. Keep its diagnostic logs
+    # beside the existing API Gateway logs, but in separate log streams.
+    log_configuration {
+      log_driver = "awslogs"
+
+      options = {
+        awslogs-group         = "/ecs/divided-by-all/api-gateway"
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "service-connect"
+      }
+    }
+
+    # Record each request handled by the proxy. Standard proxy output is mostly
+    # startup information; access logs expose the upstream status needed to
+    # diagnose an API Gateway -> User Service reset.
+    access_log_configuration {
+      format                   = "TEXT"
+      include_query_parameters = "DISABLED"
+    }
+
+    # Publish a private alias for server-side Frontend Shell requests. Browsers
+    # still use the ALB; this alias resolves only inside the VPC and avoids a
+    # private task trying to re-enter the public ALB address without NAT access.
+    service {
+      discovery_name = "api-gateway"
+      port_name      = "api-gateway"
+
+      client_alias {
+        dns_name = "api-gateway"
+        port     = 80
+      }
+    }
   }
 
   tags = {
@@ -88,4 +125,6 @@ resource "aws_ecs_service" "api_gateway" {
 # → ALB calls /health; Nginx returns HTTP 200 locally
 # → ALB marks the target healthy and forwards matching public API paths
 # → Nginx resolves User/Groups via Service Connect and proxies privately
+# → Frontend Shell can resolve api-gateway:80 through Service Connect instead
+#   of timing out while trying to call the public ALB from a private subnet
 # ------------------------------------------------------------------------------

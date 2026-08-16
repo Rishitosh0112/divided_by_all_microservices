@@ -66,6 +66,20 @@ resource "aws_ecs_task_definition" "user_service" {
         }
       ]
 
+      # Service Connect can use this essential-container health signal before
+      # routing requests. Node 20 includes fetch, so this needs no extra image
+      # package and keeps the probe inside the task's own network namespace.
+      healthCheck = {
+        command = [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:8000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+      }
+
       # Non-sensitive runtime settings may be declared directly. The User
       # application reads PORT and NODE_ENV through process.env.
       environment = [

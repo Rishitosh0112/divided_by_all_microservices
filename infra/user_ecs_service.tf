@@ -34,6 +34,13 @@ resource "aws_ecs_service" "user_service" {
   # after the service has proved it can start and connect to DocumentDB.
   desired_count = 1
 
+  # This learning environment currently has no spare awsvpc ENI capacity for
+  # an overlapping replacement. Stop the old User task before starting its
+  # replacement when Service Connect logging changes, accepting brief downtime.
+  availability_zone_rebalancing      = "DISABLED"
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
+
   # Use the existing EC2 Auto Scaling capacity provider explicitly. If the
   # current EC2 host lacks room for this 512 MiB task, ECS capacity-provider
   # managed scaling requests another EC2 instance from its Auto Scaling Group.
@@ -67,6 +74,27 @@ resource "aws_ecs_service" "user_service" {
   service_connect_configuration {
     enabled   = true
     namespace = aws_service_discovery_private_dns_namespace.app.arn
+
+    # Emit proxy-side connection and reset information. The application has
+    # separate ecs/* streams in this same group; this prefix identifies the
+    # Service Connect sidecar streams during private-network troubleshooting.
+    log_configuration {
+      log_driver = "awslogs"
+
+      options = {
+        awslogs-group         = "/ecs/divided-by-all/user-service"
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "service-connect"
+      }
+    }
+
+    # Record incoming requests at the User Service proxy. Keep query
+    # parameters out of these diagnostic logs because they can contain data
+    # that should not be written to CloudWatch.
+    access_log_configuration {
+      format                   = "TEXT"
+      include_query_parameters = "DISABLED"
+    }
 
     service {
       # Must match the named port in user_task_definition.tf.
