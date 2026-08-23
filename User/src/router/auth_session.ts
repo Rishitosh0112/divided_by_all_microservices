@@ -39,7 +39,7 @@ authRouter.post("/login", async (req, res) => {
 
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure:false, // Set to true if using HTTPS
       sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7,
     });
