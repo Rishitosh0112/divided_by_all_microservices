@@ -26,7 +26,7 @@ data "aws_ecr_repository" "user_service" {
 variable "user_service_image_tag" {
   description = "Immutable ECR image tag for the User service."
   type        = string
-  default     = "7aab85dae4bb90c7c129a851924c3d45aa7c4782"
+  default     = "c34e2525b4837c906b6ccd7ad6f85331a5bae34a"
 }
 
 # Create a versioned task-definition blueprint. Applying this resource records
