@@ -60,6 +60,11 @@ resource "aws_docdb_cluster" "user" {
   # retention period.
   deletion_protection = false
 
+  # This is an intentional full teardown of the learning environment. Do not
+  # retain a final snapshot, because retained snapshots continue to incur
+  # storage charges.
+  skip_final_snapshot = true
+
   tags = {
     Service     = "user"
     Environment = "learning"
