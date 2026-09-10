@@ -4,6 +4,87 @@ This is a staged path from the current single-region ECS deployment to a resilie
 high-throughput platform. A "1M RPS" goal must always name the route, payload size,
 read/write ratio, latency objective, geographic distribution, and budget.
 
+## Production-grade implementation track
+
+Source of truth: [`Production_Grade.md`](./Production_Grade.md). Complete P0 work
+before introducing conditional P2 infrastructure. The first implementation track is
+database production engineering, beginning with Expense & Settlement because it has
+the highest correctness risk.
+
+### P0 — database correctness and deployment safety
+
+- [ ] Inventory every service database, schema, ORM/client, migration, query path,
+  connection pool, and production connection budget.
+- [ ] Record database ownership: User → DocumentDB; Groups → PostgreSQL; Expense &
+  Settlement → separate PostgreSQL database; Activity → its own store if persisted.
+- [ ] Create Expense & Settlement's version-controlled initial migration; do not use
+  schema push for deploys.
+- [ ] Enforce Expense database invariants with PostgreSQL constraints: required
+  fields, positive expense amounts, non-negative split/balance amounts, ISO-style
+  currencies, foreign keys, and unique split participants.
+- [ ] Document which financial invariants remain application-owned because they need
+  trusted Group membership state or cross-service authorization.
+- [ ] Define transaction boundaries for every expense and settlement write; never
+  make remote calls inside a financial transaction.
+- [ ] Add real-PostgreSQL integration tests for rollback, concurrent balance updates,
+  conflicting writes, transaction reuse, and database rejection of invalid data.
+- [ ] Configure and validate one long-lived database pool per process, including
+  acquisition, idle, query/statement, connection-lifetime, and transaction timeouts.
+- [ ] Add startup configuration validation; do not listen for traffic before required
+  database configuration and connectivity policy are satisfied.
+- [ ] Add liveness/readiness endpoints and graceful shutdown that drains HTTP work and
+  closes database clients within a deadline.
+- [ ] Move migrations out of application-container startup into one serialized,
+  deploy-safe migration job; use expand-and-contract schema changes.
+- [ ] Review representative queries with `EXPLAIN (ANALYZE, BUFFERS)` and add only
+  query-justified indexes and bounded pagination.
+- [ ] Add database/pool metrics, slow-query and lock-wait visibility, dashboards, and
+  alerts for saturation and user-impacting failures.
+- [ ] Define RPO/RTO, backup retention, point-in-time recovery, restore verification,
+  and database incident runbooks; record a restore drill.
+
+### P1 — reliable asynchronous services
+
+- [ ] Define the event catalogue, owners, schemas, topic names, partition keys, and
+  compatibility rules for Groups and Expense events.
+- [ ] Add client-supplied idempotency keys for retried Expense/Settlement writes,
+  including payload mismatch and concurrent-request behavior.
+- [ ] Implement a transactional outbox within the Expense transaction and a bounded,
+  observable publisher.
+- [ ] Introduce Kafka locally and MSK in AWS only with explicit producer, consumer,
+  retry, DLQ, offset, and security policies.
+- [ ] Implement idempotent Notification Lambda event processing and Activity Service
+  consumers; treat both as eventually consistent.
+- [ ] Add outbox age, publish error, consumer lag, DLQ, and trace-propagation metrics
+  with actionable alarms.
+
+### P0/P1 — application-wide operation
+
+- [ ] Define SLOs/SLIs for core writes and reads, including p50/p95/p99 latency,
+  availability, durability, RPO, RTO, traffic assumptions, and error budgets.
+- [ ] Establish stable API contracts: validation, error codes, request IDs, body and
+  pagination limits, versioning, OpenAPI, and backward-compatible deprecation.
+- [ ] Enforce authentication, resource authorization, tenant isolation, secret
+  handling, least privilege, and a threat model for every externally reachable API.
+- [ ] Add structured redacted logs, metrics, distributed traces, financial audit
+  records, dashboards, alerts, and on-call runbooks.
+- [ ] Add unit, integration, contract, end-to-end, load, failure, and security tests
+  appropriate to each capability.
+- [ ] Upgrade CI/CD to run tests, type checks, migration validation, dependency and
+  image scanning, immutable image builds, deployment checks, and rollback/roll-forward
+  procedures.
+- [ ] Make ECS deployment capacity and health checks safe for rolling deployments;
+  test SIGTERM, dependency failure, database restart, pool exhaustion, and task loss.
+
+### P2 — introduce only with evidence
+
+- [ ] Add read replicas and separate reader/writer pools only after defining
+  lag-tolerant reads and demonstrating primary read pressure.
+- [ ] Add Redis caching only for a measured latency/load problem and with an explicit
+  invalidation and stale-data policy; never cache authoritative balances casually.
+- [ ] Add autoscaling, advanced Kafka tooling, and multi-region components only after
+  measurement, SLOs, failure modes, cost, and operational ownership justify them.
+
 ## 0. Cost and safety baseline
 
 - [x] Add a pause/resume script for ECS tasks, EC2 capacity, RDS, and DocumentDB.

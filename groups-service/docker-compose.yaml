@@ -22,6 +22,21 @@ services:
     networks:
       - devtinder-net
 
+  group-migrate:
+    image: divided-by-all/groups-service:local
+    build:
+      context: .
+    container_name: group-service-migrate
+    depends_on:
+      group-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@group-db:5432/group_service"
+    command: ["npm", "run", "db:migrate:deploy"]
+    restart: "no"
+    networks:
+      - devtinder-net
+
   group-service:
     image: divided-by-all/groups-service:local
     build:
@@ -31,8 +46,8 @@ services:
     ports:
       - "4002:4002"
     depends_on:
-      group-db:
-        condition: service_healthy
+      group-migrate:
+        condition: service_completed_successfully
     environment:
       PORT: 4002
       DATABASE_URL: "postgresql://postgres:postgres@group-db:5432/group_service"

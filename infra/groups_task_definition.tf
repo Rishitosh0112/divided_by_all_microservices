@@ -119,7 +119,6 @@ resource "aws_ecs_task_definition" "groups_service" {
 # → execution role reads DATABASE_URL from Secrets Manager
 # → ECS injects DATABASE_URL as an environment variable
 # → Docker starts
-# → Prisma migration runs
 # → Node Groups service listens on port 4002
 # → stdout and errors appear in CloudWatch Logs
 # ------------------------------------------------------------------------------

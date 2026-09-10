@@ -14,4 +14,6 @@ RUN npm run build
 
 EXPOSE 4002
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# Schema changes run in the dedicated migration task/job before API tasks deploy.
+# API containers must only serve Group Service traffic.
+CMD ["node", "dist/index.js"]
