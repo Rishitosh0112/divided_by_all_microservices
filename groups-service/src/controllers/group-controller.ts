@@ -1,4 +1,5 @@
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- required syntax for augmenting the global Express namespace
   namespace Express {
     interface Request {
       userId: string;

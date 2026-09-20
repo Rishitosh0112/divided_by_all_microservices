@@ -2,7 +2,7 @@ import { NotFound } from "../util/error";
 import { Forbidden } from "../util/error";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 class GroupService {
   private prisma;
@@ -28,7 +28,7 @@ class GroupService {
     this.prisma = new PrismaClient({ adapter });
   }
   async createGroup(name: string, description: string, userId: string) {
-    return this.prisma.$transaction(async (tx: any) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const group = await tx.group.create({
         data: {
           name,
@@ -139,7 +139,7 @@ class GroupService {
     userId: string,
     accept: boolean,
   ) {
-    await this.prisma.$transaction(async (tx: any) => {
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
 
       const invitation = await tx.groupInvitation.findUnique({
         where: { id: invitationId },

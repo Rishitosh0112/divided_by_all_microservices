@@ -7,6 +7,7 @@ export const errorHandler = (
   error: Error | AppError,
   req: Request,
   res: Response,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express requires 4 params (arity) to recognize this as error-handling middleware
   next: NextFunction
 ) => {
   console.error('Error:', error);
@@ -29,7 +30,7 @@ export const errorHandler = (
 };
 
 export const asyncHandler = (
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>
 ) => (req: Request, res: Response, next: NextFunction) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
