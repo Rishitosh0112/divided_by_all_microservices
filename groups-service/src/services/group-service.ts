@@ -139,7 +139,7 @@ class GroupService {
     userId: string,
     accept: boolean,
   ) {
-    await this.prisma.$transaction(async (tx: any) => {
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
 
       const invitation = await tx.groupInvitation.findUnique({
         where: { id: invitationId },
